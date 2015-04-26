@@ -17,6 +17,7 @@ module Sound.FluidSynth
       -- * Sound fonts
     , loadSoundFont
     , SoundFont
+    , AssignPresets(..)
     ) where
 
 import Bindings.FluidSynth
@@ -29,12 +30,14 @@ import Control.Monad.Trans.Either
 import Control.Monad.IO.Class
 import Control.Monad (when)
 
+-- | A FluidSynth synthesizer
 data FluidSynth = FluidSynth
     { fluidSettings    :: FluidSettings
     , fluidSynth       :: ForeignPtr C'fluid_synth_t
     , fluidAudioDriver :: Maybe (ForeignPtr C'fluid_audio_driver_t)
     }
 
+-- | A configuration setting
 data Setting = Setting SettingName SettingVal
              deriving (Show, Read, Eq, Ord)
 type SettingName = String
@@ -43,12 +46,15 @@ data SettingVal = StrSetting String
                 | NumSetting Double
                 deriving (Show, Read, Eq, Ord)
 
+-- | Create a string-valued setting
 strSetting :: SettingName -> String -> Setting
 strSetting k v = Setting k (StrSetting v)
 
+-- | Create an integer-valued setting
 intSetting :: SettingName -> Int -> Setting
 intSetting k v = Setting k (IntSetting v)
 
+-- | Create a floating-point-valued setting
 numSetting :: SettingName -> Double -> Setting
 numSetting k v = Setting k (NumSetting v)
 
@@ -78,6 +84,7 @@ setVerbose = do
     let go level = c'fluid_set_log_function level (castFunPtrToPtr p'fluid_default_log_function) nullPtr
     liftIO $ mapM_ go [c'FLUID_PANIC, c'FLUID_ERR, c'FLUID_WARN, c'FLUID_DBG]
 
+-- | Create a new synthesizer and audio driver
 newFluidSynth :: [Setting] -> EitherT String IO FluidSynth
 newFluidSynth settings = do
     s <- newFluidSettings settings
@@ -108,10 +115,12 @@ velocity n
   | n >= 0 && n < 128 = Velocity (fromIntegral n)
   | otherwise         = error "Invalid velocity"
 
+-- | Send a note-on event
 noteOn :: FluidSynth -> Channel -> Note -> Velocity -> EitherT String IO ()
 noteOn synth (Channel ch) (Note note) (Velocity vel) =
     check "noteOn failed" $ withSynth synth $ \s->c'fluid_synth_noteon s ch note vel
 
+-- | Send a note-off event
 noteOff :: FluidSynth -> Channel -> Note -> EitherT String IO ()
 noteOff synth (Channel ch) (Note note)=
     check "noteOff failed" $ withSynth synth $ \s->c'fluid_synth_noteoff s ch note
@@ -124,10 +133,20 @@ check err action = do
 -- | Represents a loaded SoundFont
 newtype SoundFont = SoundFont CInt
 
-loadSoundFont :: FluidSynth -> FilePath -> EitherT String IO SoundFont
-loadSoundFont synth fname = do
+-- | Load a SoundFont
+loadSoundFont :: FluidSynth
+              -> FilePath                    -- ^ path of SoundFont file
+              -> AssignPresets               -- ^ re-assign presets
+              -> EitherT String IO SoundFont
+loadSoundFont synth fname assignPresets = do
     res <- liftIO $ withCString fname $ \fnamePtr -> withSynth synth $ \s ->
-      c'fluid_synth_sfload s fnamePtr 0
+      c'fluid_synth_sfload s fnamePtr $ case assignPresets of
+                                         ReassignPresets -> 1
+                                         otherwise       -> 0
     if res == c'FLUID_FAILED
        then left "sfload failed"
        else return (SoundFont res)
+
+-- | Whether to re-assign channel presets when loading a SoundFont
+data AssignPresets = ReassignPresets | PreservePresets
+                   deriving (Show, Read, Eq, Ord, Bounded, Enum)

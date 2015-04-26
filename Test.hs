@@ -8,7 +8,7 @@ printEitherT action = runEitherT action >>= either print return
 
 main = printEitherT $ do
     synth <- newFluidSynth [strSetting "audio.driver" "pulseaudio"]
-    loadSoundFont synth "/usr/share/sounds/sf2/FluidR3_GM.sf2"
+    loadSoundFont synth "/usr/share/sounds/sf2/FluidR3_GM.sf2" ReassignPresets
     noteOn synth (channel 0) (note 60) (velocity 100)
     liftIO $ threadDelay 1000000000
     noteOn synth (channel 0) (note 60) (velocity 100)
